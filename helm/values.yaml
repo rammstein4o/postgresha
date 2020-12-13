@@ -1,0 +1,10 @@
+nameOverride: ""
+fullnameOverride: ""
+replicaCount: 2
+
+image: rammstein4o/postgresha:latest
+imageConfig:
+  pullPolicy: IfNotPresent
+passwords:
+  postgres: s3cr3T
+  repuser: s3cr3T

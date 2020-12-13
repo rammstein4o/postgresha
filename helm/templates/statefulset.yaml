@@ -1,0 +1,133 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "postgresha.name" . }}-server
+  labels:
+    {{- include "postgresha.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "postgresha.name" . }}
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "postgresha.selectorLabels" . | nindent 6 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "2Gi"
+    - metadata:
+        name: archivedir
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "2Gi"
+  template:
+    metadata:
+      labels:
+        {{- include "postgresha.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        fsGroup: 70
+        runAsGroup: 70
+        runAsUser: 70
+      volumes:
+        - name: postgres-home
+          emptyDir: {}
+      initContainers:
+        - name: chown-container
+          image: {{ .Values.image | quote }}
+          imagePullPolicy: {{ .Values.imageConfig.pullPolicy | quote }}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          securityContext:
+            runAsGroup: 0
+            runAsUser: 0
+            capabilities:
+              add: ["CHOWN", "FOWNER"]
+              drop: ["ALL"]
+          command:
+            - sh
+            - -c
+            - chown-dirs.sh
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/
+              name: postgres-home
+            - mountPath: "/var/lib/postgresql/data"
+              name: data
+              readOnly: false
+            - mountPath: "/var/lib/postgresql/archivedir"
+              name: archivedir
+              readOnly: false
+          resources:
+            limits:
+              cpu: 50m
+              memory: 64Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+        - name: setup-container
+          image: {{ .Values.image | quote }}
+          imagePullPolicy: {{ .Values.imageConfig.pullPolicy | quote }}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          env:
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: MY_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+            - name: MY_SERVICE_NAME
+              value: {{ include "postgresha.name" . }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "postgresha.name" . }}-postgres-passwd
+                  key: password
+            - name: REPUSER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "postgresha.name" . }}-repuser-passwd
+                  key: password
+          command:
+            - sh
+            - -c
+            - init-server.sh
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/
+              name: postgres-home
+            - mountPath: "/var/lib/postgresql/data"
+              name: data
+              readOnly: false
+          resources:
+            limits:
+              cpu: 500m
+              memory: 256Mi
+            requests:
+              cpu: 500m
+              memory: 256Mi
+      containers:
+        - name: {{ include "postgresha.name" . }}
+          image: {{ .Values.image | quote }}
+          imagePullPolicy: {{ .Values.imageConfig.pullPolicy | quote }}
+          ports:
+            - containerPort: 5432
+              name: postgres
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/
+              name: postgres-home
+            - mountPath: "/var/lib/postgresql/data"
+              name: data
+              readOnly: false
+            - mountPath: "/var/lib/postgresql/archivedir"
+              name: archivedir
+              readOnly: false
